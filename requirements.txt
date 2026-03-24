@@ -1,0 +1,6 @@
+streamlit
+googlemaps
+ortools
+folium
+streamlit-folium
+python-dotenv
