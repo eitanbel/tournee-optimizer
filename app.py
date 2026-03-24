@@ -48,7 +48,6 @@ st.divider()
 # ─────────────────────────────────────────────
 st.subheader("📦 Adresses de livraison")
 
-# Adresses d'exemple en Île-de-France pour les tests
 exemple_adresses = """Tour Eiffel, Paris
 Musée du Louvre, Paris
 Château de Versailles, Versailles
@@ -59,28 +58,22 @@ col1, col2 = st.columns([3, 1])
 with col1:
     adresses_texte = st.text_area(
         "Collez vos adresses ici (une par ligne)",
+        value=st.session_state.get("adresses_texte", ""),
         height=200,
         placeholder="10 Rue de la Paix, Paris\n15 Avenue Montaigne, Paris\n..."
     )
+    st.session_state["adresses_texte"] = adresses_texte
 with col2:
     st.markdown("**Exemple Île-de-France :**")
     if st.button("📋 Charger l'exemple"):
-        st.session_state["exemple_charge"] = True
+        st.session_state["adresses_texte"] = exemple_adresses
         st.rerun()
-
-# Chargement de l'exemple si demandé
-if st.session_state.get("exemple_charge"):
-    adresses_texte = exemple_adresses
-    st.session_state["exemple_charge"] = False
-    # Afficher directement avec le texte d'exemple
-    adresses_texte = exemple_adresses
 
 # ─────────────────────────────────────────────
 # Bouton principal : lancer l'optimisation
 # ─────────────────────────────────────────────
 if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=True):
 
-    # Validation des entrées
     lignes = [l.strip() for l in adresses_texte.strip().split("\n") if l.strip()]
 
     if not adresse_depart.strip():
@@ -90,9 +83,6 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
     if len(lignes) == 0:
         st.warning("⚠️ Aucune adresse de livraison saisie. Veuillez en ajouter au moins une.")
         st.stop()
-
-    if len(lignes) == 1:
-        st.info("ℹ️ Une seule adresse de livraison : aucune optimisation nécessaire.")
 
     # ── Étape 1 : Géocodage ──
     with st.spinner("📍 Géocodage des adresses en cours..."):
@@ -110,7 +100,6 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
     # ── Étape 2 : Matrice de distances ──
     st.markdown("**🗺️ Calcul de la matrice de temps de trajet avec trafic...**")
     barre_progression = st.progress(0)
-
     matrice = build_distance_matrix(points, progress_bar=barre_progression)
     barre_progression.progress(1.0)
 
@@ -130,74 +119,71 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
         st.error("❌ Le solveur n'a pas trouvé de solution. Réessayez.")
         st.stop()
 
-    # Réorganiser les points selon l'itinéraire optimal
     try:
         points_ordonnes = [points[i] for i in itineraire]
         durees_etapes = calculer_durees_etapes(itineraire, matrice)
         duree_totale = sum(durees_etapes)
     except Exception as e:
         st.error(f"❌ Erreur lors de la construction de l'itinéraire : {e}")
-        st.error(f"Détail — itinéraire: {itineraire}, nb points: {len(points)}")
         st.stop()
 
-    st.success("✅ Optimisation terminée !")
+    # Sauvegarde des résultats dans session_state pour persistance
+    st.session_state["resultats"] = {
+        "points_ordonnes": points_ordonnes,
+        "durees_etapes": durees_etapes,
+        "duree_totale": duree_totale,
+    }
 
-    # ─────────────────────────────────────────────
-    # Affichage des résultats
-    # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# Affichage des résultats (depuis session_state)
+# ─────────────────────────────────────────────
+if "resultats" in st.session_state:
+    res = st.session_state["resultats"]
+    points_ordonnes = res["points_ordonnes"]
+    durees_etapes = res["durees_etapes"]
+    duree_totale = res["duree_totale"]
+
+    st.success("✅ Optimisation terminée !")
     st.divider()
     st.subheader("📋 Itinéraire optimisé")
 
-    # Résumé du temps total
     col_resume1, col_resume2, col_resume3 = st.columns(3)
     with col_resume1:
         st.metric("⏱️ Temps total", formater_duree(duree_totale))
     with col_resume2:
         st.metric("📍 Nombre d'arrêts", len(points_ordonnes) - 1)
     with col_resume3:
-        st.metric("🏁 Arrêts inclus", len(points_ordonnes))
+        st.metric("🏁 Points au total", len(points_ordonnes))
 
-    # Liste ordonnée des étapes
     st.markdown("### Détail des étapes")
     for k, point in enumerate(points_ordonnes):
         if k == 0:
             st.markdown(f"**🏠 Départ :** {point['adresse_formatee']}")
         else:
             duree_etape = durees_etapes[k - 1]
-            emoji = "🏁" if k == len(points_ordonnes) - 1 else f"📦"
+            emoji = "🏁" if k == len(points_ordonnes) - 1 else "📦"
             st.markdown(
                 f"{emoji} **Arrêt {k}** : {point['adresse_formatee']}  \n"
                 f"&nbsp;&nbsp;&nbsp;&nbsp;⏱️ Depuis l'étape précédente : **{formater_duree(duree_etape)}**"
             )
 
-    # ─────────────────────────────────────────────
-    # Carte Folium interactive
-    # ─────────────────────────────────────────────
+    # ── Carte Folium ──
     st.divider()
     st.subheader("🗺️ Carte de l'itinéraire")
 
-    # Centre de la carte : centroïde de tous les points
     lat_centre = sum(p['lat'] for p in points_ordonnes) / len(points_ordonnes)
     lng_centre = sum(p['lng'] for p in points_ordonnes) / len(points_ordonnes)
-
     carte = folium.Map(location=[lat_centre, lng_centre], zoom_start=10)
 
-    # Couleurs pour les marqueurs
-    couleurs = ["green"] + ["blue"] * (len(points_ordonnes) - 2) + ["red"]
-
-    # Ajout des marqueurs numérotés
     for k, point in enumerate(points_ordonnes):
         if k == 0:
-            label = "D"  # Départ
-            couleur = "green"
+            label, couleur = "D", "green"
             popup_text = f"🏠 Départ : {point['adresse_formatee']}"
         elif k == len(points_ordonnes) - 1:
-            label = str(k)
-            couleur = "red"
+            label, couleur = str(k), "red"
             popup_text = f"🏁 Arrêt final {k} : {point['adresse_formatee']}"
         else:
-            label = str(k)
-            couleur = "blue"
+            label, couleur = str(k), "blue"
             popup_text = f"📦 Arrêt {k} : {point['adresse_formatee']}"
 
         folium.Marker(
@@ -207,7 +193,6 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
             icon=folium.Icon(color=couleur, icon="info-sign")
         ).add_to(carte)
 
-        # Numéro sur le marqueur via DivIcon
         folium.Marker(
             location=[point['lat'], point['lng']],
             icon=folium.DivIcon(
@@ -220,22 +205,11 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
             )
         ).add_to(carte)
 
-    # Tracé de la ligne de l'itinéraire
     coordonnees = [(p['lat'], p['lng']) for p in points_ordonnes]
-    folium.PolyLine(
-        coordonnees,
-        weight=3,
-        color="#FF6B35",
-        opacity=0.8,
-        tooltip="Itinéraire optimal"
-    ).add_to(carte)
-
-    # Affichage de la carte dans Streamlit
+    folium.PolyLine(coordonnees, weight=3, color="#FF6B35", opacity=0.8).add_to(carte)
     st_folium(carte, width=None, height=500, use_container_width=True)
 
-    # ─────────────────────────────────────────────
-    # Export Google Maps
-    # ─────────────────────────────────────────────
+    # ── Export Google Maps ──
     st.divider()
     st.subheader("📤 Export Google Maps")
 
@@ -249,6 +223,5 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
             unsafe_allow_html=True
         )
         st.caption("Ce lien ouvre la navigation complète dans Google Maps avec tous les waypoints dans l'ordre optimal.")
-
         with st.expander("🔗 Voir l'URL complète"):
             st.code(url_gmaps, language=None)
