@@ -119,13 +119,26 @@ if st.button("🚀 Optimiser la tournée", type="primary", use_container_width=T
         st.stop()
 
     # ── Étape 3 : Optimisation OR-Tools ──
-    with st.spinner("⚙️ Optimisation de l'itinéraire en cours (jusqu'à 30 secondes)..."):
-        itineraire = resoudre_tsp(matrice)
+    try:
+        with st.spinner("⚙️ Optimisation de l'itinéraire en cours (jusqu'à 30 secondes)..."):
+            itineraire = resoudre_tsp(matrice)
+    except Exception as e:
+        st.error(f"❌ Erreur lors de l'optimisation : {e}")
+        st.stop()
+
+    if not itineraire:
+        st.error("❌ Le solveur n'a pas trouvé de solution. Réessayez.")
+        st.stop()
 
     # Réorganiser les points selon l'itinéraire optimal
-    points_ordonnes = [points[i] for i in itineraire]
-    durees_etapes = calculer_durees_etapes(itineraire, matrice)
-    duree_totale = sum(durees_etapes)
+    try:
+        points_ordonnes = [points[i] for i in itineraire]
+        durees_etapes = calculer_durees_etapes(itineraire, matrice)
+        duree_totale = sum(durees_etapes)
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la construction de l'itinéraire : {e}")
+        st.error(f"Détail — itinéraire: {itineraire}, nb points: {len(points)}")
+        st.stop()
 
     st.success("✅ Optimisation terminée !")
 
